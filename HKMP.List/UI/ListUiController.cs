@@ -1550,14 +1550,9 @@ namespace HKMP.List.UI
 
         private static int GetTeamSortOrder(Hkmp.Game.Team team)
         {
-            switch (team)
-            {
-                case Hkmp.Game.Team.Moss: return 0;
-                case Hkmp.Game.Team.Hive: return 1;
-                case Hkmp.Game.Team.Grimm: return 2;
-                case Hkmp.Game.Team.Lifeblood: return 3;
-                default: return 4;
-            }
+            return team == Hkmp.Game.Team.None
+                ? int.MaxValue
+                : (int)team;
         }
 
         private void CreateSettingsArea()
@@ -3340,7 +3335,7 @@ namespace HKMP.List.UI
             Button button = ListUiFactory.CreateButton(
                 parent,
                 "TeamLeaderManagement",
-                isLeader ? "Remove team leader" : "Appoint as " + player.Team + " leader",
+                isLeader ? "Remove team leader" : "Appoint as " + ListMoreTeamsBridge.GetTeamName(player.Team) + " leader",
                 delegate
                 {
                     if (_addon == null)
@@ -3408,7 +3403,7 @@ namespace HKMP.List.UI
             Button button = ListUiFactory.CreateButton(
                 parent,
                 "AssignPlayerToMyTeam",
-                "Add to " + targetTeam + " team",
+                "Add to " + ListMoreTeamsBridge.GetTeamName(targetTeam) + " team",
                 delegate
                 {
                     if (_addon == null)
@@ -3438,10 +3433,7 @@ namespace HKMP.List.UI
 
         private static bool IsPlayableTeam(Hkmp.Game.Team team)
         {
-            return team == Hkmp.Game.Team.Moss ||
-                   team == Hkmp.Game.Team.Hive ||
-                   team == Hkmp.Game.Team.Grimm ||
-                   team == Hkmp.Game.Team.Lifeblood;
+            return TeamSettingsData.IsPlayableTeam(team);
         }
 
         private void SendTeamKick(ushort playerId)
@@ -5251,36 +5243,29 @@ namespace HKMP.List.UI
         private static Color GetTeamColor(
             Hkmp.Game.Team team)
         {
+            Color fallback;
             switch (team)
             {
                 case Hkmp.Game.Team.Moss:
-                    return new Color(
-                        0f,
-                        150f / 255f,
-                        0f);
-
+                    fallback = new Color(0f, 150f / 255f, 0f);
+                    break;
                 case Hkmp.Game.Team.Hive:
-                    return new Color(
-                        200f / 255f,
-                        150f / 255f,
-                        0f);
-
+                    fallback = new Color(200f / 255f, 150f / 255f, 0f);
+                    break;
                 case Hkmp.Game.Team.Grimm:
-                    return new Color(
-                        250f / 255f,
-                        50f / 255f,
-                        50f / 255f);
-
+                    fallback = new Color(250f / 255f, 50f / 255f, 50f / 255f);
+                    break;
                 case Hkmp.Game.Team.Lifeblood:
-                    return new Color(
-                        50f / 255f,
-                        150f / 255f,
-                        200f / 255f);
-
+                    fallback = new Color(50f / 255f, 150f / 255f, 200f / 255f);
+                    break;
                 default:
-                    return Color.white;
+                    fallback = Color.white;
+                    break;
             }
+
+            return ListMoreTeamsBridge.GetTeamColor(team, fallback);
         }
+
         private sealed class ListDragHandle :
             MonoBehaviour,
             IBeginDragHandler,

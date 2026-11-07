@@ -25,7 +25,7 @@ namespace HKMP.List.Client
             "HKMP.List";
 
         protected override string Version =>
-            "1.0.0.0";
+            "1.1.0.0";
 
         public override bool NeedsNetwork =>
             true;

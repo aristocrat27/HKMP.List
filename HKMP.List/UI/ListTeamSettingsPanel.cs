@@ -11,14 +11,6 @@ namespace HKMP.List.UI
 {
     internal sealed class ListTeamSettingsPanel
     {
-        private static readonly Team[] Teams =
-        {
-            Team.Moss,
-            Team.Hive,
-            Team.Grimm,
-            Team.Lifeblood
-        };
-
         private readonly ListClientAddon _addon;
         private readonly object _gate = new object();
         private readonly HashSet<Team> _expandedLeaderTeams = new HashSet<Team>();
@@ -116,8 +108,9 @@ namespace HKMP.List.UI
                 42f);
 
             CreateTeamChangesLockControl(state, connected, canManageAllLeaders);
+            CreateMoreTeamsSettingsControls(connected, canManageAllLeaders);
 
-            foreach (Team team in Teams)
+            foreach (Team team in ListMoreTeamsBridge.GetPlayableTeams())
             {
                 TeamSettingsEntryData entry = snapshots.FirstOrDefault(
                     item => item != null && item.Team == team);
@@ -141,11 +134,15 @@ namespace HKMP.List.UI
                      (state.IsAuthorized && permissions != null && permissions.CanManageTeamLeaders) ||
                      localLeaderCanManageTeam);
 
+                bool canDeleteTeam = connected && canManageAllLeaders &&
+                    ListMoreTeamsBridge.IsCustomTeam((int)team);
+
                 CreateTeamCard(
                     entry,
                     teamPlayers,
                     canManageAppearance,
-                    canManageLeaders);
+                    canManageLeaders,
+                    canDeleteTeam);
             }
 
             Canvas.ForceUpdateCanvases();
@@ -226,6 +223,105 @@ namespace HKMP.List.UI
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             _scroll.content = _content;
             _root.gameObject.SetActive(false);
+        }
+
+        private void CreateMoreTeamsSettingsControls(
+            bool connected,
+            bool canManageAllTeams)
+        {
+            if (!ListMoreTeamsBridge.HasListIntegration)
+            {
+                return;
+            }
+
+            AddInfoRow("MORE TEAMS  ·  HOST SETTINGS", 28f);
+            bool canToggle = connected && canManageAllTeams &&
+                _addon != null && _addon.IsConnected;
+
+            CreateMoreTeamsToggle(
+                "Allow players to create teams",
+                ListMoreTeamsBridge.AllowPlayerCreation,
+                canToggle,
+                ListMoreTeamsBridge.SetPlayerCreationEnabled);
+
+            CreateMoreTeamsToggle(
+                "Team creators become team leaders",
+                ListMoreTeamsBridge.CreatorsBecomeLeaders,
+                canToggle,
+                ListMoreTeamsBridge.SetCreatorsBecomeLeaders);
+
+            if (!canManageAllTeams)
+            {
+                AddCardText(
+                    _content,
+                    "Host or administrator permission required: Manage teams.",
+                    11,
+                    new Color(0.68f, 0.68f, 0.74f, 1f),
+                    20f);
+            }
+        }
+
+        private void CreateMoreTeamsToggle(
+            string caption,
+            bool enabled,
+            bool canToggle,
+            Action<bool> setter)
+        {
+            GameObject row = ListUiFactory.CreateObject(_content, "MoreTeamsToggleRow");
+            ListUiFactory.AddLayoutElement(row, 0f, 34f);
+
+            HorizontalLayoutGroup layout = row.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 8f;
+            layout.padding = new RectOffset(5, 5, 2, 2);
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = true;
+
+            Text label = ListUiFactory.CreateText(
+                row.transform,
+                "MoreTeamsToggleLabel",
+                caption,
+                13,
+                Color.white);
+            LayoutElement labelLayout = label.gameObject.AddComponent<LayoutElement>();
+            labelLayout.flexibleWidth = 1f;
+            labelLayout.minWidth = 190f;
+
+            Button button = ListUiFactory.CreateButton(
+                row.transform,
+                "MoreTeamsToggleState",
+                enabled ? "ON" : "OFF",
+                delegate
+                {
+                    if (canToggle && setter != null)
+                    {
+                        setter(!enabled);
+                        RequestRefresh();
+                    }
+                },
+                12);
+            ListUiFactory.AddLayoutElement(button.gameObject, 78f, 27f);
+            button.interactable = canToggle;
+
+            Image background = button.targetGraphic as Image;
+            if (background != null)
+            {
+                background.color = enabled
+                    ? new Color(0.18f, 0.48f, 0.30f, 1f)
+                    : new Color(0.16f, 0.16f, 0.19f, 1f);
+            }
+
+            ColorBlock colors = button.colors;
+            colors.normalColor = enabled
+                ? new Color(0.18f, 0.48f, 0.30f, 1f)
+                : new Color(0.16f, 0.16f, 0.19f, 1f);
+            colors.highlightedColor = new Color(0.28f, 0.56f, 0.38f, 1f);
+            colors.pressedColor = new Color(0.10f, 0.34f, 0.20f, 1f);
+            colors.disabledColor = new Color(0.10f, 0.10f, 0.12f, 0.55f);
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
         }
 
         private void CreateTeamChangesLockControl(
@@ -323,7 +419,8 @@ namespace HKMP.List.UI
             TeamSettingsEntryData entry,
             List<ListPlayerView> teamPlayers,
             bool canManageAppearance,
-            bool canManageLeaders)
+            bool canManageLeaders,
+            bool canDeleteTeam)
         {
             Team team = entry.Team;
             if (teamPlayers.Count == 0)
@@ -383,6 +480,11 @@ namespace HKMP.List.UI
                 TextAnchor.MiddleRight);
             ListUiFactory.AddLayoutElement(count.gameObject, 0f, 22f);
 
+            if (canDeleteTeam)
+            {
+                CreateTrashButton(headingRow.transform, (byte)team);
+            }
+
             string leader = !entry.HasAssignedLeader
                 ? "Leader: not assigned"
                 : entry.HasConnectedLeader
@@ -419,6 +521,68 @@ namespace HKMP.List.UI
                 AddCardText(card.transform, "No connected players are on this team.", 11,
                     new Color(0.62f, 0.62f, 0.67f, 1f), 17f);
             }
+        }
+
+        private void CreateTrashButton(Transform parent, byte teamId)
+        {
+            Button button = ListUiFactory.CreateButton(
+                parent,
+                "DeleteTeam_" + teamId,
+                string.Empty,
+                delegate
+                {
+                    if (_addon != null && _addon.IsConnected)
+                    {
+                        ListMoreTeamsBridge.DeleteTeam(teamId);
+                        _expandedLeaderTeams.Remove((Team)teamId);
+                    }
+                },
+                12);
+            ListUiFactory.AddLayoutElement(button.gameObject, 30f, 24f);
+
+            Text caption = button.GetComponentInChildren<Text>();
+            if (caption != null)
+            {
+                UnityEngine.Object.Destroy(caption.gameObject);
+            }
+
+            Image background = button.targetGraphic as Image;
+            if (background != null)
+            {
+                background.color = new Color(0.22f, 0.075f, 0.085f, 1f);
+            }
+
+            ColorBlock colors = button.colors;
+            colors.normalColor = new Color(0.22f, 0.075f, 0.085f, 1f);
+            colors.highlightedColor = new Color(0.52f, 0.12f, 0.15f, 1f);
+            colors.pressedColor = new Color(0.35f, 0.06f, 0.09f, 1f);
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
+
+            Color iconColor = new Color(0.94f, 0.80f, 0.80f, 1f);
+            AddTrashIconPart(button.transform, "TrashHandle", iconColor, 7f, 2.5f, 0f, 7f);
+            AddTrashIconPart(button.transform, "TrashLid", iconColor, 17f, 2.5f, 0f, 4f);
+            AddTrashIconPart(button.transform, "TrashBody", iconColor, 13f, 13f, 0f, -3f);
+            AddTrashIconPart(button.transform, "TrashLineLeft", new Color(0.22f, 0.075f, 0.085f, 1f), 1.5f, 7f, -3f, -3f);
+            AddTrashIconPart(button.transform, "TrashLineRight", new Color(0.22f, 0.075f, 0.085f, 1f), 1.5f, 7f, 3f, -3f);
+        }
+
+        private static void AddTrashIconPart(
+            Transform parent,
+            string name,
+            Color color,
+            float width,
+            float height,
+            float x,
+            float y)
+        {
+            Image image = ListUiFactory.CreateImage(parent, name, color);
+            RectTransform rect = image.rectTransform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(width, height);
+            rect.anchoredPosition = new Vector2(x, y);
         }
 
         private void CreateLeaderControls(
@@ -727,26 +891,22 @@ namespace HKMP.List.UI
 
         private static string TeamName(Team team)
         {
-            switch (team)
-            {
-                case Team.Moss: return "MOSS";
-                case Team.Hive: return "HIVE";
-                case Team.Grimm: return "GRIMM";
-                case Team.Lifeblood: return "LIFEBLOOD";
-                default: return "NO TEAM";
-            }
+            return ListMoreTeamsBridge.GetTeamName(team);
         }
 
         private static Color TeamColor(Team team)
         {
+            Color fallback;
             switch (team)
             {
-                case Team.Moss: return new Color(0.48f, 0.82f, 0.50f, 1f);
-                case Team.Hive: return new Color(1f, 0.62f, 0.27f, 1f);
-                case Team.Grimm: return new Color(0.94f, 0.38f, 0.42f, 1f);
-                case Team.Lifeblood: return new Color(0.45f, 0.72f, 1f, 1f);
-                default: return Color.white;
+                case Team.Moss: fallback = new Color(0.48f, 0.82f, 0.50f, 1f); break;
+                case Team.Hive: fallback = new Color(1f, 0.62f, 0.27f, 1f); break;
+                case Team.Grimm: fallback = new Color(0.94f, 0.38f, 0.42f, 1f); break;
+                case Team.Lifeblood: fallback = new Color(0.45f, 0.72f, 1f, 1f); break;
+                default: fallback = Color.white; break;
             }
+
+            return ListMoreTeamsBridge.GetTeamColor(team, fallback);
         }
     }
 }

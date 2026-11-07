@@ -103,7 +103,7 @@ namespace HKMP.List.Server
                 ? new List<IServerPlayer>()
                 : connectedPlayers.Where(player => player != null).ToList();
 
-            List<TeamSettingsEntryData> result = new List<TeamSettingsEntryData>(4);
+            List<TeamSettingsEntryData> result = new List<TeamSettingsEntryData>(ListMoreTeamsBridge.GetPlayableTeamIds().Length);
             foreach (Team team in GetPlayableTeams())
             {
                 TeamRecord record = records.FirstOrDefault(item => item.Team == (int)team);
@@ -344,12 +344,10 @@ namespace HKMP.List.Server
                     bool upgradedLegacySkinTimestamps = false;
                     foreach (TeamRecord item in loaded.Teams)
                     {
-                        if (item == null || !Enum.IsDefined(typeof(Team), item.Team))
+                        if (item == null || item.Team < 1 || item.Team > TeamSettingsData.MaximumPlayableTeamCount)
                             continue;
 
                         Team team = (Team)item.Team;
-                        if (!TeamSettingsData.IsPlayableTeam(team))
-                            continue;
 
                         TeamRecord normalized = item.Clone();
                         normalized.Team = (int)team;
@@ -425,7 +423,7 @@ namespace HKMP.List.Server
 
         private static IEnumerable<Team> GetPlayableTeams()
         {
-            return new[] { Team.Moss, Team.Hive, Team.Grimm, Team.Lifeblood };
+            return ListMoreTeamsBridge.GetPlayableTeams();
         }
 
         private static string NormalizeFingerprint(string value)

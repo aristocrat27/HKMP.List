@@ -61,7 +61,7 @@ namespace HKMP.List.Shared
 
     public static class ListProtocol
     {
-        public const byte Version = 13;
+        public const byte Version = 14;
         public const int MaxUsernameLength = 20;
         public const int MaxNoteLength = 4096;
         public const int MaxActionMessageLength = 255;
@@ -1167,6 +1167,8 @@ namespace HKMP.List.Shared
 
     public sealed class TeamSettingsData : IPacketData
     {
+        public const int MaximumPlayableTeamCount = 68;
+
         public bool IsReliable => true;
         public bool DropReliableDataIfNewerExists => true;
 
@@ -1183,7 +1185,7 @@ namespace HKMP.List.Shared
                 .GroupBy(entry => entry.Team)
                 .Select(group => group.Last())
                 .OrderBy(entry => (byte)entry.Team)
-                .Take(4)
+                .Take(MaximumPlayableTeamCount)
                 .ToList();
 
             packet.Write(ListProtocol.Version);
@@ -1213,17 +1215,14 @@ namespace HKMP.List.Shared
             ListProtocol.EnsureVersion(packet);
             TeamChangesLocked = packet.ReadBool();
             byte count = packet.ReadByte();
-            if (count > 4)
+            if (count > MaximumPlayableTeamCount)
                 throw new InvalidOperationException("Team settings collection is too large.");
 
             List<TeamSettingsEntryData> entries = new List<TeamSettingsEntryData>(count);
             for (int i = 0; i < count; i++)
             {
                 Team team = (Team)packet.ReadByte();
-                if (!IsPlayableTeam(team))
-                    throw new InvalidOperationException("Invalid team in team settings packet.");
-
-                entries.Add(new TeamSettingsEntryData
+                TeamSettingsEntryData entry = new TeamSettingsEntryData
                 {
                     Team = team,
                     HasAssignedLeader = packet.ReadBool(),
@@ -1234,7 +1233,10 @@ namespace HKMP.List.Shared
                     TeamSkinId = packet.ReadByte(),
                     IsSkinLocked = packet.ReadBool(),
                     SkinUpdatedAtUtcTicks = packet.ReadLong()
-                });
+                };
+
+                if (IsPlayableTeam(team))
+                    entries.Add(entry);
             }
 
             Entries = entries
@@ -1246,8 +1248,7 @@ namespace HKMP.List.Shared
 
         public static bool IsPlayableTeam(Team team)
         {
-            return team == Team.Moss || team == Team.Hive ||
-                   team == Team.Grimm || team == Team.Lifeblood;
+            return ListMoreTeamsBridge.IsPlayableTeam((int)team);
         }
     }
 
